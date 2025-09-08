@@ -11,35 +11,35 @@
       "success": true,
       "message": "User registered successfully",
       "details": {
-        "userId": "68be9a2fb79c8043837e91ad",
-        "email": "test1757321774847@example.com",
+        "userId": "68bec5e48c2287e1145121e9",
+        "email": "test1757332964470@example.com",
         "tokenReceived": true
       },
-      "timestamp": "2025-09-08T08:56:15.610Z"
+      "timestamp": "2025-09-08T12:02:44.995Z"
     },
     {
       "test": "User Login",
       "success": true,
       "message": "User logged in successfully",
       "details": {
-        "userId": "68be9a2fb79c8043837e91ad",
-        "email": "test1757321774847@example.com",
+        "userId": "68bec5e48c2287e1145121e9",
+        "email": "test1757332964470@example.com",
         "tokenReceived": true,
         "tokenMatches": true
       },
-      "timestamp": "2025-09-08T08:56:16.129Z"
+      "timestamp": "2025-09-08T12:02:45.265Z"
     },
     {
       "test": "Get Current User",
       "success": true,
       "message": "User data retrieved successfully",
       "details": {
-        "userId": "68be9a2fb79c8043837e91ad",
-        "email": "test1757321774847@example.com",
+        "userId": "68bec5e48c2287e1145121e9",
+        "email": "test1757332964470@example.com",
         "name": "Test User",
         "hasSettings": true
       },
-      "timestamp": "2025-09-08T08:56:16.219Z"
+      "timestamp": "2025-09-08T12:02:45.310Z"
     },
     {
       "test": "Update Profile",
@@ -49,7 +49,7 @@
         "newName": "Updated Test User",
         "newAvatar": "https://example.com/avatar.jpg"
       },
-      "timestamp": "2025-09-08T08:56:16.398Z"
+      "timestamp": "2025-09-08T12:02:45.410Z"
     },
     {
       "test": "Change Password",
@@ -58,7 +58,7 @@
       "details": {
         "message": "Password updated successfully"
       },
-      "timestamp": "2025-09-08T08:56:17.504Z"
+      "timestamp": "2025-09-08T12:02:46.006Z"
     },
     {
       "test": "Update Settings",
@@ -77,7 +77,7 @@
         "mediumRiskThreshold": 0.5,
         "highRiskThreshold": 0.8
       },
-      "timestamp": "2025-09-08T08:56:17.700Z"
+      "timestamp": "2025-09-08T12:02:46.094Z"
     },
     {
       "test": "Refresh Token",
@@ -87,7 +87,7 @@
         "newTokenReceived": true,
         "tokenChanged": true
       },
-      "timestamp": "2025-09-08T08:56:17.853Z"
+      "timestamp": "2025-09-08T12:02:46.140Z"
     },
     {
       "test": "Unauthorized Access",
@@ -100,7 +100,7 @@
           "error": "Access denied. No token provided"
         }
       },
-      "timestamp": "2025-09-08T08:56:17.861Z"
+      "timestamp": "2025-09-08T12:02:46.144Z"
     },
     {
       "test": "Invalid Token",
@@ -113,7 +113,7 @@
           "error": "Invalid token"
         }
       },
-      "timestamp": "2025-09-08T08:56:17.872Z"
+      "timestamp": "2025-09-08T12:02:46.150Z"
     },
     {
       "test": "Logout",
@@ -122,7 +122,7 @@
       "details": {
         "message": "Logged out successfully"
       },
-      "timestamp": "2025-09-08T08:56:17.973Z"
+      "timestamp": "2025-09-08T12:02:46.195Z"
     },
     {
       "test": "Wrong Password",
@@ -135,7 +135,7 @@
           "error": "Invalid credentials"
         }
       },
-      "timestamp": "2025-09-08T08:56:18.518Z"
+      "timestamp": "2025-09-08T12:02:46.459Z"
     },
     {
       "test": "Duplicate Registration",
@@ -148,7 +148,7 @@
           "error": "User already exists"
         }
       },
-      "timestamp": "2025-09-08T08:56:18.598Z"
+      "timestamp": "2025-09-08T12:02:46.502Z"
     },
     {
       "test": "Google OAuth Mock",
@@ -161,7 +161,7 @@
           "error": "Google authentication failed"
         }
       },
-      "timestamp": "2025-09-08T08:56:18.972Z"
+      "timestamp": "2025-09-08T12:02:46.593Z"
     },
     {
       "test": "Account Deactivation",
@@ -170,8 +170,8 @@
       "details": {
         "message": "Account deactivated successfully"
       },
-      "timestamp": "2025-09-08T08:56:19.659Z"
+      "timestamp": "2025-09-08T12:02:46.957Z"
     }
   ],
-  "generatedAt": "2025-09-08T08:56:19.661Z"
+  "generatedAt": "2025-09-08T12:02:46.958Z"
 }
