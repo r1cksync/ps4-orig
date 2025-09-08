@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { memoryUpload } from '../services/s3Service.js';
@@ -372,7 +373,6 @@ function getContentType(mimeType) {
 }
 
 function generateFileHash(buffer) {
-  const crypto = await import('crypto');
   return crypto.createHash('md5').update(buffer).digest('hex');
 }
 

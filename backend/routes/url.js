@@ -6,7 +6,7 @@ import UrlReputation from '../models/UrlReputation.js';
 import ScanResult from '../models/ScanResult.js';
 import Alert from '../models/Alert.js';
 import axios from 'axios';
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 import { URL } from 'url';
 
 const router = express.Router();

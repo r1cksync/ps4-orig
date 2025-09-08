@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
-import { Server } from 'socket.io';
+import { Server as SocketIOServer } from 'socket.io';
 import dotenv from 'dotenv';
 
 // Import configurations and services
@@ -29,7 +29,7 @@ class Server {
   constructor() {
     this.app = express();
     this.server = createServer(this.app);
-    this.io = new Server(this.server, {
+    this.io = new SocketIOServer(this.server, {
       cors: {
         origin: process.env.NODE_ENV === 'production' 
           ? ['https://yourdomain.com'] 

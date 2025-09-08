@@ -1,0 +1,177 @@
+{
+  "summary": {
+    "total": 14,
+    "passed": 14,
+    "failed": 0,
+    "successRate": "100.0"
+  },
+  "results": [
+    {
+      "test": "User Registration",
+      "success": true,
+      "message": "User registered successfully",
+      "details": {
+        "userId": "68be9a2fb79c8043837e91ad",
+        "email": "test1757321774847@example.com",
+        "tokenReceived": true
+      },
+      "timestamp": "2025-09-08T08:56:15.610Z"
+    },
+    {
+      "test": "User Login",
+      "success": true,
+      "message": "User logged in successfully",
+      "details": {
+        "userId": "68be9a2fb79c8043837e91ad",
+        "email": "test1757321774847@example.com",
+        "tokenReceived": true,
+        "tokenMatches": true
+      },
+      "timestamp": "2025-09-08T08:56:16.129Z"
+    },
+    {
+      "test": "Get Current User",
+      "success": true,
+      "message": "User data retrieved successfully",
+      "details": {
+        "userId": "68be9a2fb79c8043837e91ad",
+        "email": "test1757321774847@example.com",
+        "name": "Test User",
+        "hasSettings": true
+      },
+      "timestamp": "2025-09-08T08:56:16.219Z"
+    },
+    {
+      "test": "Update Profile",
+      "success": true,
+      "message": "Profile updated successfully",
+      "details": {
+        "newName": "Updated Test User",
+        "newAvatar": "https://example.com/avatar.jpg"
+      },
+      "timestamp": "2025-09-08T08:56:16.398Z"
+    },
+    {
+      "test": "Change Password",
+      "success": true,
+      "message": "Password changed successfully",
+      "details": {
+        "message": "Password updated successfully"
+      },
+      "timestamp": "2025-09-08T08:56:17.504Z"
+    },
+    {
+      "test": "Update Settings",
+      "success": true,
+      "message": "Settings updated successfully",
+      "details": {
+        "slackIntegration": false,
+        "autoScanWhatsApp": true,
+        "scanAudio": true,
+        "scanUrls": true,
+        "emailAlerts": true,
+        "pushNotifications": false,
+        "autoScanGmail": true,
+        "scanImages": true,
+        "lowRiskThreshold": 0.2,
+        "mediumRiskThreshold": 0.5,
+        "highRiskThreshold": 0.8
+      },
+      "timestamp": "2025-09-08T08:56:17.700Z"
+    },
+    {
+      "test": "Refresh Token",
+      "success": true,
+      "message": "Token refreshed successfully",
+      "details": {
+        "newTokenReceived": true,
+        "tokenChanged": true
+      },
+      "timestamp": "2025-09-08T08:56:17.853Z"
+    },
+    {
+      "test": "Unauthorized Access",
+      "success": true,
+      "message": "Correctly denied access without token",
+      "details": {
+        "status": 401,
+        "error": {
+          "success": false,
+          "error": "Access denied. No token provided"
+        }
+      },
+      "timestamp": "2025-09-08T08:56:17.861Z"
+    },
+    {
+      "test": "Invalid Token",
+      "success": true,
+      "message": "Correctly rejected invalid token",
+      "details": {
+        "status": 401,
+        "error": {
+          "success": false,
+          "error": "Invalid token"
+        }
+      },
+      "timestamp": "2025-09-08T08:56:17.872Z"
+    },
+    {
+      "test": "Logout",
+      "success": true,
+      "message": "User logged out successfully",
+      "details": {
+        "message": "Logged out successfully"
+      },
+      "timestamp": "2025-09-08T08:56:17.973Z"
+    },
+    {
+      "test": "Wrong Password",
+      "success": true,
+      "message": "Correctly rejected wrong password",
+      "details": {
+        "status": 401,
+        "error": {
+          "success": false,
+          "error": "Invalid credentials"
+        }
+      },
+      "timestamp": "2025-09-08T08:56:18.518Z"
+    },
+    {
+      "test": "Duplicate Registration",
+      "success": true,
+      "message": "Correctly rejected duplicate email",
+      "details": {
+        "status": 400,
+        "error": {
+          "success": false,
+          "error": "User already exists"
+        }
+      },
+      "timestamp": "2025-09-08T08:56:18.598Z"
+    },
+    {
+      "test": "Google OAuth Mock",
+      "success": true,
+      "message": "Correctly rejected mock Google token (expected behavior)",
+      "details": {
+        "status": 401,
+        "error": {
+          "success": false,
+          "error": "Google authentication failed"
+        }
+      },
+      "timestamp": "2025-09-08T08:56:18.972Z"
+    },
+    {
+      "test": "Account Deactivation",
+      "success": true,
+      "message": "Account deactivated successfully",
+      "details": {
+        "message": "Account deactivated successfully"
+      },
+      "timestamp": "2025-09-08T08:56:19.659Z"
+    }
+  ],
+  "generatedAt": "2025-09-08T08:56:19.661Z"
+}
