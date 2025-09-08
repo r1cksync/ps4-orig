@@ -1,0 +1,17 @@
+{
+  "name": "dm-system-tests",
+  "version": "1.0.0",
+  "description": "Comprehensive test suite for DM system",
+  "type": "module",
+  "scripts": {
+    "test": "node dmSystemTests.js",
+    "test:performance": "node dmSystemTests.js --performance",
+    "test:errors": "node dmSystemTests.js --errors",
+    "test:all": "node dmSystemTests.js --all"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.5",
+    "axios": "^1.6.8",
+    "colors": "^1.4.0"
+  }
+}

@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import Server from '../models/Server.js';
 import Channel from '../models/Channel.js';
 import DirectMessageChannel from '../models/DirectMessageChannel.js';
+import { setupDMHandlers } from '../socket/dmHandlers.js';
 
 // Store connected users and their socket IDs
 const connectedUsers = new Map();
@@ -159,6 +160,9 @@ export const handleConnection = (io) => {
     socket.on('leaveDM', async (data) => {
       await handleLeaveDM(socket, data);
     });
+
+    // Set up comprehensive DM handlers for Discord-like functionality
+    setupDMHandlers(io, socket);
 
     // Handle voice settings updates
     socket.on('voiceSettingsUpdate', async (data) => {

@@ -12,6 +12,7 @@ A comprehensive Discord-like chat application backend with integrated real-time 
 - **Friend System**: Send/accept friend requests, block users, search for friends
 - **User Presence**: Online/idle/DND/invisible status with custom status messages
 - **Message Features**: Reactions, replies, message editing, pinning, search
+- **File Sharing**: Upload and share images, documents, and files with S3 cloud storage
 - **Permissions System**: Role-based access control with Discord-like permissions
 - **Rich Content**: Support for attachments, embeds, and rich message content
 
@@ -74,6 +75,39 @@ A comprehensive Discord-like chat application backend with integrated real-time 
 - `GET /api/dms/:id` - Get DM channel details
 - `GET /api/dms/:id/messages` - Get DM messages
 - `POST /api/dms/:id/messages` - Send DM message
+- `POST /api/dms/:id/upload` - Upload file to DM (returns attachment metadata)
+- `POST /api/dms/:id/messages/with-file` - Send DM message with file attachment
+
+#### File Upload & Attachments
+- **S3 Integration**: Secure cloud storage for user files and attachments
+- **Multi-format Support**: Images (PNG, JPEG, GIF), documents (PDF), text files
+- **File Size Limits**: 50MB maximum file size with configurable limits
+- **Secure Access**: Private S3 storage with signed URLs for temporary access
+- **Metadata Tracking**: Filename, content type, size, and upload timestamp
+- **Real-time Delivery**: File uploads trigger instant notifications to participants
+
+**Supported File Types:**
+- **Images**: PNG, JPEG, JPG, GIF, BMP, WebP
+- **Documents**: PDF, TXT
+- **Audio**: MP3, WAV, OGG, M4A, AAC *(configured but not tested)*
+- **Video**: MP4, AVI, MOV, WMV, FLV *(configured but not tested)*
+
+**Usage Examples:**
+```javascript
+// Upload file only (returns attachment metadata)
+POST /api/dms/{channelId}/upload
+Content-Type: multipart/form-data
+Body: { file: <binary_data> }
+
+// Send message with file attachment
+POST /api/dms/{channelId}/messages/with-file  
+Content-Type: multipart/form-data
+Body: { 
+  file: <binary_data>,
+  content: "Check out this image!",
+  referencedMessageId: "optional_reply_id"
+}
+```
 
 #### Friends
 - `GET /api/friends` - Get friends and requests
@@ -99,8 +133,11 @@ A comprehensive Discord-like chat application backend with integrated real-time 
 - `messageUpdate` - Message edited
 - `messageDelete` - Message deleted
 - `directMessage` - New DM message
+- `dmMessage` - DM message with potential file attachments
 - `typing` - User typing in channel
 - `dmTyping` - User typing in DM
+- `fileUploaded` - File successfully uploaded to channel/DM
+- `attachmentShared` - File attachment shared in message
 
 #### Voice
 - `joinVoiceChannel` - Join voice channel
@@ -127,6 +164,8 @@ A comprehensive Discord-like chat application backend with integrated real-time 
 - Node.js 18+ 
 - MongoDB
 - Redis (optional, for caching)
+- AWS S3 Bucket (for file uploads and storage)
+- AWS IAM credentials with S3 access permissions
 
 ### Installation
 
@@ -159,6 +198,16 @@ JWT_SECRET=your-super-secret-jwt-key
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 
+# AWS S3 (for file uploads)
+AWS_ACCESS_KEY_ID=your-aws-access-key
+AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=your-s3-bucket-name
+
+# File Upload Settings
+MAX_FILE_SIZE=52428800  # 50MB in bytes
+UPLOAD_PATH=./uploads   # Local fallback path
+
 # Server
 PORT=5000
 NODE_ENV=development
@@ -176,6 +225,18 @@ npm run dev
 
 # Production
 npm start
+```
+
+5. Test file upload functionality (optional)
+```bash
+# Test basic image upload
+node tests/imageUploadTest.js
+
+# Test comprehensive file types
+node tests/comprehensiveFileTest.js
+
+# Test complete DM system
+node tests/completeTest.js
 ```
 
 ## 🏛️ Database Schema
@@ -255,7 +316,16 @@ npm start
   author: ObjectId,
   channel: ObjectId,
   server: ObjectId,
-  attachments: [Object],
+  attachments: [{
+    id: String,           // S3 key for file identification
+    filename: String,     // Original filename
+    contentType: String,  // MIME type (image/png, application/pdf, etc.)
+    size: Number,         // File size in bytes
+    url: String,          // Signed S3 URL for temporary access
+    proxyUrl: String,     // Permanent S3 URL (requires authentication)
+    height: Number,       // Image height (for images only)
+    width: Number         // Image width (for images only)
+  }],
   embeds: [Object],
   reactions: [{
     emoji: Object,
@@ -270,7 +340,50 @@ npm start
 }
 ```
 
-## 🔒 Security Features
+## � File Upload & Storage
+
+### AWS S3 Integration
+The application uses AWS S3 for secure cloud storage of user files and attachments.
+
+**Features:**
+- **Secure Storage**: Files stored in private S3 buckets with access control
+- **Signed URLs**: Temporary access links (24-hour expiration) for file downloads
+- **Organized Structure**: Files organized by user ID and timestamp for easy management
+- **Metadata Preservation**: Original filename, content type, and size tracking
+- **Multi-format Support**: Images, documents, audio, and video files
+
+**File Organization:**
+```
+S3 Bucket Structure:
+├── dm-attachments/
+│   └── {userId}/
+│       └── {timestamp}-{randomId}-{filename}
+├── server-attachments/
+│   └── {serverId}/
+│       └── {channelId}/
+│           └── {timestamp}-{randomId}-{filename}
+└── avatars/
+    └── {userId}/
+        └── {timestamp}-{randomId}-{filename}
+```
+
+**Security:**
+- Private bucket access only
+- IAM-based authentication
+- Signed URLs with expiration
+- File type validation
+- Size limit enforcement (50MB default)
+
+### File Upload Process
+1. **Client Upload**: Multipart form data sent to upload endpoint
+2. **Validation**: File type, size, and permissions checked
+3. **S3 Storage**: File uploaded to S3 with unique key
+4. **Metadata Creation**: Attachment object created with file details
+5. **Message Integration**: File attached to message in database
+6. **Real-time Notification**: Socket.IO event sent to participants
+7. **Signed URL Generation**: Temporary access URL created for immediate use
+
+## �🔒 Security Features
 
 - **JWT Authentication**: Secure token-based authentication
 - **Rate Limiting**: Protection against spam and abuse

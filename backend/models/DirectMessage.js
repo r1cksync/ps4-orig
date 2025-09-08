@@ -83,6 +83,11 @@ const directMessageSchema = new mongoose.Schema({
       ref: 'DirectMessageChannel'
     }
   },
+  // Referenced message for replies
+  referencedMessage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'DirectMessage'
+  },
   // Reactions
   reactions: [{
     emoji: {
