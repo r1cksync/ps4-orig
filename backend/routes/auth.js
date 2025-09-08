@@ -4,6 +4,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { authenticate, generateToken } from '../middleware/auth.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import User from '../models/User.js';
+import Friendship from '../models/Friendship.js';
 import { config } from '../config/index.js';
 
 const router = express.Router();
@@ -17,7 +18,7 @@ const googleClient = new OAuth2Client(
 
 // Register user
 router.post('/register', asyncHandler(async (req, res) => {
-  const { email, password, name } = req.body;
+  const { email, password, name, username } = req.body;
 
   if (!email || !password) {
     throw new ApiError('Email and password are required', 400);
@@ -29,6 +30,21 @@ router.post('/register', asyncHandler(async (req, res) => {
     throw new ApiError('User already exists', 400);
   }
 
+  // Generate username if not provided
+  let finalUsername = username || name || email.split('@')[0];
+  finalUsername = finalUsername.toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '');
+
+  // Ensure username length
+  if (finalUsername.length < 2) {
+    finalUsername = 'user' + Math.floor(Math.random() * 10000);
+  }
+  if (finalUsername.length > 32) {
+    finalUsername = finalUsername.substring(0, 32);
+  }
+
+  // Generate unique discriminator
+  const discriminator = await User.generateDiscriminator();
+
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 12);
 
@@ -36,7 +52,10 @@ router.post('/register', asyncHandler(async (req, res) => {
   const user = new User({
     email: email.toLowerCase(),
     password: hashedPassword,
-    name: name || email.split('@')[0],
+    name: name || finalUsername,
+    username: finalUsername,
+    discriminator,
+    displayName: name || finalUsername
   });
 
   await user.save();
@@ -52,7 +71,13 @@ router.post('/register', asyncHandler(async (req, res) => {
         id: user._id,
         email: user.email,
         name: user.name,
+        username: user.username,
+        discriminator: user.discriminator,
+        displayName: user.displayName,
+        tag: user.getTag(),
         isActive: user.isActive,
+        avatar: user.avatar,
+        status: user.status
       },
     },
   });
@@ -93,8 +118,15 @@ router.post('/login', asyncHandler(async (req, res) => {
         id: user._id,
         email: user.email,
         name: user.name,
+        username: user.username,
+        discriminator: user.discriminator,
+        displayName: user.displayName,
+        tag: user.getTag(),
         isActive: user.isActive,
         avatar: user.avatar,
+        status: user.status,
+        customStatus: user.customStatus,
+        badges: user.badges
       },
     },
   });
@@ -208,6 +240,61 @@ router.put('/profile', authenticate, asyncHandler(async (req, res) => {
       isActive: user.isActive,
       avatar: user.avatar,
     },
+  });
+}));
+
+// Update user status
+router.put('/status', authenticate, asyncHandler(async (req, res) => {
+  const { status, customStatus } = req.body;
+
+  // Validate status
+  const validStatuses = ['ONLINE', 'IDLE', 'DND', 'INVISIBLE', 'OFFLINE'];
+  if (status && !validStatuses.includes(status)) {
+    throw new ApiError('Invalid status. Must be one of: ' + validStatuses.join(', '), 400);
+  }
+
+  const updateData = {};
+  if (status) updateData.status = status;
+  if (customStatus !== undefined) updateData.customStatus = customStatus;
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    updateData,
+    { new: true, runValidators: true }
+  );
+
+  // Broadcast status update to friends
+  const io = req.app.get('io');
+  if (io) {
+    // Get user's friends to notify them of status change
+    const friends = await Friendship.find({
+      $or: [
+        { requester: req.user._id, status: 'ACCEPTED' },
+        { recipient: req.user._id, status: 'ACCEPTED' }
+      ]
+    }).populate('requester recipient', '_id');
+
+    // Notify each friend
+    friends.forEach(friendship => {
+      const friendId = friendship.requester._id.toString() === req.user._id.toString() 
+        ? friendship.recipient._id.toString() 
+        : friendship.requester._id.toString();
+      
+      io.to(`user:${friendId}`).emit('friendStatusUpdate', {
+        userId: req.user._id,
+        status: user.status,
+        customStatus: user.customStatus
+      });
+    });
+  }
+
+  res.json({
+    success: true,
+    data: {
+      id: user._id,
+      status: user.status,
+      customStatus: user.customStatus
+    }
   });
 }));
 

@@ -17,10 +17,16 @@ import alertRoutes from './routes/alerts.js';
 import userRoutes from './routes/users.js';
 import webhookRoutes from './routes/webhooks.js';
 import urlRoutes from './routes/url.js';
+import serverRoutes from './routes/servers.js';
+import channelRoutes from './routes/channels.js';
+import messageRoutes from './routes/messages.js';
+import dmRoutes from './routes/dms.js';
+import friendRoutes from './routes/friends.js';
 
 // Import middleware
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './middleware/logger.js';
+import { authenticateSocket, handleConnection } from './socketHandlers/index.js';
 
 // Load environment variables
 dotenv.config();
@@ -127,13 +133,25 @@ class Server {
     this.app.use('/api/users', userRoutes);
     this.app.use('/api/webhooks', webhookRoutes);
     this.app.use('/api/url', urlRoutes);
+    
+    // Discord-like chat routes
+    this.app.use('/api/servers', serverRoutes);
+    this.app.use('/api/channels', channelRoutes);
+    this.app.use('/api/messages', messageRoutes);
+    this.app.use('/api/dms', dmRoutes);
+    this.app.use('/api/friends', friendRoutes);
 
     // Root endpoint
     this.app.get('/', (req, res) => {
       res.json({
-        message: 'Fraud Detection API',
-        version: '1.0.0',
+        message: 'IntelliHack Chat & Fraud Detection API',
+        version: '2.0.0',
         status: 'running',
+        features: {
+          fraudDetection: 'Real-time scam and fraud detection',
+          chat: 'Discord-like chat with servers, channels, DMs',
+          realTime: 'Socket.IO powered real-time messaging'
+        },
         endpoints: {
           health: '/health',
           auth: '/api/auth',
@@ -142,6 +160,11 @@ class Server {
           users: '/api/users',
           webhooks: '/api/webhooks',
           url: '/api/url',
+          servers: '/api/servers',
+          channels: '/api/channels',
+          messages: '/api/messages',
+          dms: '/api/dms',
+          friends: '/api/friends'
         },
       });
     });
@@ -157,23 +180,22 @@ class Server {
   }
 
   setupWebSocket() {
-    this.io.on('connection', (socket) => {
-      console.log(`👤 User connected: ${socket.id}`);
-
-      // Join user-specific room
-      socket.on('join', (userId) => {
-        socket.join(`user_${userId}`);
-        console.log(`👤 User ${userId} joined room`);
-      });
-
-      // Handle disconnection
-      socket.on('disconnect', () => {
-        console.log(`👤 User disconnected: ${socket.id}`);
-      });
-    });
+    // Socket.IO authentication middleware
+    this.io.use(authenticateSocket);
+    
+    // Handle connections with comprehensive Discord-like features
+    this.io.on('connection', handleConnection(this.io));
 
     // Make io available to other modules
     this.app.set('io', this.io);
+    
+    console.log('🔌 WebSocket configured with Discord-like features:');
+    console.log('   - Real-time messaging');
+    console.log('   - Voice channel management');
+    console.log('   - Typing indicators');
+    console.log('   - User presence/status');
+    console.log('   - Friend system');
+    console.log('   - Direct messages');
   }
 
   setupErrorHandling() {
@@ -206,10 +228,12 @@ class Server {
 
   start() {
     this.server.listen(this.port, () => {
-      console.log(`🚀 Server running on port ${this.port}`);
+      console.log(`🚀 IntelliHack Server running on port ${this.port}`);
       console.log(`🌍 Environment: ${config.NODE_ENV}`);
       console.log(`📊 Database: ${database.isConnected() ? 'Connected' : 'Disconnected'}`);
       console.log(`🔗 Health check: http://localhost:${this.port}/health`);
+      console.log(`💬 Chat Features: Discord-like servers, channels, DMs, voice, friends`);
+      console.log(`🛡️  Fraud Detection: Real-time scam detection integrated into chat`);
     });
   }
 
