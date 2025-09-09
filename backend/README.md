@@ -1,53 +1,89 @@
-# IntelliHack Chat & Fraud Detection Backend
+# Discord-like Server Backend API
 
-A comprehensive Discord-like chat application backend with integrated real-time fraud detection capabilities.
+A comprehensive Discord-inspired backend server with real-time communication, user management, server management, channels, roles, permissions, and more.
 
-## 🌟 Features
+## 📋 Table of Contents
 
-### 💬 Discord-like Chat System
-- **Servers & Channels**: Create servers with text/voice channels, categories, and permissions
-- **Real-time Messaging**: Socket.IO powered instant messaging with typing indicators
-- **Voice Channels**: Connect/disconnect from voice channels with user state tracking
-- **Direct Messages**: Private 1-on-1 and group DM conversations
-- **Friend System**: Send/accept friend requests, block users, search for friends
-- **User Presence**: Online/idle/DND/invisible status with custom status messages
-- **Message Features**: Reactions, replies, message editing, pinning, search
-- **File Sharing**: Upload and share images, documents, and files with S3 cloud storage
-- **Permissions System**: Role-based access control with Discord-like permissions
-- **Rich Content**: Support for attachments, embeds, and rich message content
+- [Features](#features)
+- [Getting Started](#getting-started)
+- [API Documentation](#api-documentation)
+- [Real-time Events](#real-time-events)
+- [Authentication](#authentication)
+- [Error Handling](#error-handling)
+- [Testing](#testing)
 
-### 🛡️ Fraud Detection Integration
-- **Real-time Scam Detection**: Every message analyzed for potential fraud/scams
-- **URL Reputation Checking**: Automatic scanning of shared links
-- **Content Analysis**: AI-powered analysis of text, images, and attachments
-- **Risk Scoring**: Messages flagged with risk levels (low/medium/high)
-- **Alert System**: Real-time notifications for detected threats
+## 🚀 Features
 
-## 🏗️ Architecture
+### Core Features
+- **User Authentication** - JWT-based authentication with registration/login
+- **Server Management** - Create, update, delete, and manage Discord-like servers
+- **Channel System** - Text, voice, and category channels with permissions
+- **Role & Permission System** - Hierarchical roles with granular permissions
+- **Member Management** - Invite, kick, ban, and manage server members
+- **Real-time Communication** - Socket.IO for live updates and events
+- **Invite System** - Server invites with expiration and usage limits
+- **Emoji System** - Custom server emojis
+- **Audit Logging** - Track all server activities
 
-### Models
-- **User**: Discord-like user profiles with username#discriminator system
-- **Server**: Chat servers with member management and settings
-- **Channel**: Text/voice channels with permissions and categories
-- **Message**: Rich messaging with reactions, replies, and fraud detection
-- **Role**: Permission-based role system
-- **DirectMessage**: Private messaging system
-- **Friendship**: Friend request and relationship management
+### Security Features
+- **Rate Limiting** - API rate limiting to prevent abuse
+- **CORS Protection** - Cross-origin resource sharing configuration
+- **Helmet Security** - Various security headers
+- **Input Validation** - Request validation using express-validator
+- **Permission Checks** - Granular permission system
 
-### API Endpoints
+## 🛠 Getting Started
 
-#### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - User login
-- `POST /api/auth/google` - Google OAuth login
+### Prerequisites
+- Node.js 16+ 
+- MongoDB 4+
+- npm or yarn
 
-#### Servers
-- `GET /api/servers` - Get user's servers
-- `POST /api/servers` - Create new server
-- `GET /api/servers/:id` - Get server details
-- `PUT /api/servers/:id` - Update server
-- `DELETE /api/servers/:id` - Delete server
-- `POST /api/servers/:id/join` - Join server with invite
+### Installation
+
+1. **Clone the repository**
+```bash
+git clone <repository-url>
+cd backend
+```
+
+2. **Install dependencies**
+```bash
+npm install
+```
+
+3. **Environment Setup**
+Create a `.env` file:
+```env
+# Server Configuration
+PORT=3001
+NODE_ENV=development
+
+# Database
+MONGODB_URI=mongodb://localhost:27017/discord_clone
+
+# JWT
+JWT_SECRET=your_super_secret_jwt_key_here
+JWT_EXPIRE=7d
+
+# Frontend URL (for CORS and invites)
+FRONTEND_URL=http://localhost:3000
+
+# Security
+RATE_LIMIT_WINDOW=15
+RATE_LIMIT_MAX=100
+```
+
+4. **Start the server**
+```bash
+# Development
+npm run dev
+
+# Production
+npm start
+```
+
+The server will start on `http://localhost:3001`
 - `POST /api/servers/:id/leave` - Leave server
 
 #### Channels

@@ -81,6 +81,13 @@ router.post('/', authenticate, async (req, res) => {
       .populate('category', 'name')
       .populate('server', 'name');
 
+    // Emit real-time channel created event
+    req.app.get('io').to(`server:${serverId}`).emit('channelCreated', {
+      serverId,
+      channel: populatedChannel,
+      createdBy: req.user._id
+    });
+
     res.status(201).json(populatedChannel);
   } catch (error) {
     console.error('Error creating channel:', error);
@@ -174,6 +181,14 @@ router.put('/:channelId', authenticate, async (req, res) => {
       .populate('category', 'name')
       .populate('server', 'name');
 
+    // Emit real-time channel updated event
+    req.app.get('io').to(`server:${updatedChannel.server._id}`).emit('channelUpdated', {
+      serverId: updatedChannel.server._id,
+      channel: updatedChannel,
+      updatedBy: req.user._id,
+      changes: { name, topic, slowMode, position }
+    });
+
     res.json(updatedChannel);
   } catch (error) {
     console.error('Error updating channel:', error);
@@ -213,6 +228,14 @@ router.delete('/:channelId', authenticate, async (req, res) => {
 
     // Delete the channel
     await Channel.findByIdAndDelete(channelId);
+
+    // Emit real-time channel deleted event
+    req.app.get('io').to(`server:${channel.server}`).emit('channelDeleted', {
+      serverId: channel.server,
+      channelId,
+      channelName: channel.name,
+      deletedBy: req.user._id
+    });
 
     res.json({ message: 'Channel deleted successfully' });
   } catch (error) {

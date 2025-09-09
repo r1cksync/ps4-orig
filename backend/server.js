@@ -22,6 +22,7 @@ import channelRoutes from './routes/channels.js';
 import messageRoutes from './routes/messages.js';
 import dmRoutes from './routes/dms.js';
 import friendRoutes from './routes/friends.js';
+import rolesRoutes from './routes/roles.js';
 
 // Import middleware
 import { errorHandler } from './middleware/errorHandler.js';
@@ -136,6 +137,8 @@ class Server {
     
     // Discord-like chat routes
     this.app.use('/api/servers', serverRoutes);
+    this.app.use('/api/servers', rolesRoutes);
+    this.app.use('/api/roles', rolesRoutes); // Add direct roles route for permissions
     this.app.use('/api/channels', channelRoutes);
     this.app.use('/api/messages', messageRoutes);
     this.app.use('/api/dms', dmRoutes);

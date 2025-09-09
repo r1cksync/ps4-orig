@@ -12,7 +12,9 @@ const userSockets = new Map();
 // Authentication middleware for Socket.IO
 export const authenticateSocket = async (socket, next) => {
   try {
-    const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
+    const token = socket.handshake.auth.token || 
+                 socket.handshake.headers.authorization?.replace('Bearer ', '') ||
+                 socket.handshake.query.token;
     
     if (!token) {
       return next(new Error('Authentication token required'));
@@ -28,7 +30,7 @@ export const authenticateSocket = async (socket, next) => {
     socket.user = user;
     next();
   } catch (error) {
-    console.error('Socket authentication error:', error);
+    console.error('Socket authentication error:', error.message);
     next(new Error('Authentication failed'));
   }
 };
