@@ -839,6 +839,147 @@ Send a message to a channel.
 }
 ```
 
+#### POST `/api/channels/:channelId/upload`
+Upload a file to a channel (direct file upload).
+
+**Required Permission:** `VIEW_CHANNEL`, `SEND_MESSAGES`, and `ATTACH_FILES`
+
+**Content-Type:** `multipart/form-data`
+
+**Request Body:**
+```
+file: File (binary data)
+```
+
+**Supported File Types:**
+- Images: PNG, JPG, JPEG, GIF, WEBP
+- Documents: PDF, TXT, DOC, DOCX
+- Audio: MP3, WAV, OGG
+- Video: MP4, WEBM, MOV
+- Archives: ZIP, RAR
+- Code: JS, HTML, CSS, JSON (validation required)
+
+**File Size Limits:**
+- Maximum: 25MB per file
+- Images: Optimized for web display
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "attachment": {
+      "id": "s3-key-string",
+      "filename": "original-filename.ext",
+      "contentType": "mime/type",
+      "size": 1234567,
+      "url": "https://s3-signed-url-for-access",
+      "proxyUrl": "https://s3-direct-url",
+      "height": null,
+      "width": null
+    },
+    "message": "File uploaded successfully"
+  }
+}
+```
+
+#### POST `/api/channels/:channelId/messages/with-file`
+Send a message with file attachment.
+
+**Required Permission:** `VIEW_CHANNEL`, `SEND_MESSAGES`, and `ATTACH_FILES`
+
+**Content-Type:** `multipart/form-data`
+
+**Request Body:**
+```
+file: File (binary data) - required
+content: string (message text) - optional
+```
+
+**Response:**
+```json
+{
+  "_id": "message_id",
+  "content": "Message text with attachment!",
+  "author": {
+    "_id": "user_id",
+    "username": "username",
+    "discriminator": "1234",
+    "displayName": "Display Name"
+  },
+  "channel": "channel_id",
+  "server": "server_id",
+  "type": "FILE_ATTACHMENT",
+  "attachments": [
+    {
+      "id": "s3-key-string",
+      "filename": "image.png",
+      "contentType": "image/png",
+      "size": 45678,
+      "url": "https://s3-signed-url-for-24h-access",
+      "proxyUrl": "https://s3-direct-url",
+      "height": null,
+      "width": null
+    }
+  ],
+  "isPinned": false,
+  "isEdited": false,
+  "reactions": [],
+  "createdAt": "2025-09-09T15:26:53.940Z"
+}
+```
+
+**Socket.IO Event Emitted:**
+```javascript
+// To: channel:{channelId}
+{
+  "event": "message",
+  "data": {
+    "_id": "message_id",
+    "content": "Message text with attachment!",
+    "author": {
+      "_id": "user_id",
+      "username": "username", 
+      "discriminator": "1234",
+      "displayName": "Display Name"
+    },
+    "channel": "channel_id",
+    "server": "server_id", 
+    "type": "FILE_ATTACHMENT",
+    "attachments": [
+      {
+        "id": "s3-key-string",
+        "filename": "image.png",
+        "contentType": "image/png",
+        "size": 45678,
+        "url": "https://s3-signed-url-for-24h-access",
+        "proxyUrl": "https://s3-direct-url",
+        "height": null,
+        "width": null
+      }
+    ],
+    "fraudCheck": {
+      "isScanned": false,
+      "riskScore": 0,
+      "riskLevel": "VERY_LOW", 
+      "flags": []
+    },
+    "isPinned": false,
+    "isEdited": false,
+    "reactions": [],
+    "createdAt": "2025-09-09T15:26:53.940Z"
+  }
+}
+```
+
+**File Upload Security:**
+- File type validation based on MIME type and extension
+- Virus scanning integration (planned)
+- Size limits enforced
+- S3 bucket with proper IAM permissions
+- Signed URLs for secure access (24h expiration)
+- Channel permission validation before upload
+
 #### POST `/api/channels/:channelId/typing`
 Send typing indicator.
 
@@ -922,6 +1063,8 @@ Leave a voice channel.
 - `channelUpdated` - Channel settings updated
 - `channelDeleted` - Channel deleted
 - `message` - New message sent
+- `fileUploaded` - File uploaded to channel
+- `messageWithFile` - Message sent with file attachment
 - `typing` - User started typing
 - `voiceStateUpdate` - Voice channel state changed
 
@@ -950,6 +1093,57 @@ All Socket.IO events follow this structure:
     // Event-specific data
     "timestamp": "2025-09-09T14:41:50.451Z",
     // ... other fields
+  }
+}
+```
+
+### 📁 File Upload Event Examples
+
+#### `fileUploaded` Event
+```javascript
+{
+  "event": "fileUploaded",
+  "data": {
+    "attachment": {
+      "_id": "65a4b8c9d8e7f9a1b2c3d4e5",
+      "filename": "document.pdf",
+      "url": "https://s3.amazonaws.com/intellihack-uploads/...",
+      "size": 1048576,
+      "mimetype": "application/pdf"
+    },
+    "uploadedBy": {
+      "_id": "65a4b8c9d8e7f9a1b2c3d4e6",
+      "username": "john_doe",
+      "avatar": "https://s3.amazonaws.com/..."
+    },
+    "channelId": "65a4b8c9d8e7f9a1b2c3d4e7",
+    "timestamp": "2025-09-09T14:41:50.451Z"
+  }
+}
+```
+
+#### `messageWithFile` Event
+```javascript
+{
+  "event": "messageWithFile",
+  "data": {
+    "_id": "65a4b8c9d8e7f9a1b2c3d4e8",
+    "content": "Check out this document!",
+    "type": "FILE_ATTACHMENT",
+    "attachment": {
+      "_id": "65a4b8c9d8e7f9a1b2c3d4e5",
+      "filename": "document.pdf",
+      "url": "https://s3.amazonaws.com/intellihack-uploads/...",
+      "size": 1048576,
+      "mimetype": "application/pdf"
+    },
+    "author": {
+      "_id": "65a4b8c9d8e7f9a1b2c3d4e6",
+      "username": "john_doe",
+      "avatar": "https://s3.amazonaws.com/..."
+    },
+    "channel": "65a4b8c9d8e7f9a1b2c3d4e7",
+    "timestamp": "2025-09-09T14:41:50.451Z"
   }
 }
 ```
