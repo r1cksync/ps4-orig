@@ -5,6 +5,8 @@ import Server from '../models/Server.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
 import { authenticate } from '../middleware/auth.js';
+import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import s3Service, { memoryUpload } from '../services/s3Service.js';
 
 const router = express.Router();
 
@@ -24,7 +26,7 @@ const hasServerPermission = (server, userId, permission) => {
   if (server.owner.toString() === userId.toString()) return true;
   
   // For now, all members have basic permissions except manage channels
-  const basicPermissions = ['viewChannels', 'readMessageHistory', 'sendMessages', 'connect'];
+  const basicPermissions = ['viewChannels', 'readMessageHistory', 'sendMessages', 'connect', 'attachFiles'];
   if (basicPermissions.includes(permission)) return true;
   
   // Only owner can manage channels for now
@@ -417,6 +419,194 @@ router.post('/:channelId/typing', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error sending typing indicator:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   POST /api/channels/:channelId/upload
+// @desc    Upload file to channel
+// @access  Private
+router.post('/:channelId/upload', authenticate, memoryUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file provided' });
+    }
+
+    const { channelId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(channelId)) {
+      return res.status(400).json({ message: 'Invalid channel ID' });
+    }
+
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ message: 'Channel not found' });
+    }
+
+    const server = await Server.findById(channel.server);
+    if (!server || !isServerMember(server, req.user._id)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const canSend = hasServerPermission(server, req.user._id, 'sendMessages');
+    const canAttach = hasServerPermission(server, req.user._id, 'attachFiles');
+    if (!canSend || !canAttach) {
+      return res.status(403).json({ message: 'Cannot upload files in this channel' });
+    }
+
+    // Upload file to S3
+    const uploadResult = await s3Service.uploadFile(req.file, req.user.id, 'channel-attachments');
+    
+    // Generate signed URL for immediate access
+    const signedUrl = await s3Service.getSignedUrl(uploadResult.key, 86400); // 24 hours
+
+    const attachment = {
+      id: uploadResult.key,
+      filename: uploadResult.filename,
+      contentType: req.file.mimetype,
+      size: uploadResult.size,
+      url: signedUrl,
+      proxyUrl: uploadResult.url,
+      // Add dimensions for images
+      ...(req.file.mimetype.startsWith('image/') && {
+        height: null, // Can be enhanced with image processing
+        width: null
+      })
+    };
+
+    res.status(201).json({
+      success: true,
+      data: {
+        attachment,
+        message: 'File uploaded successfully'
+      }
+    });
+
+  } catch (error) {
+    console.error('Channel file upload error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      userId: req.user._id,
+      channelId: req.params.channelId,
+      fileName: req.file?.originalname
+    });
+    res.status(500).json({ message: 'Failed to upload file', error: error.message });
+  }
+});
+
+// @route   POST /api/channels/:channelId/messages/with-file
+// @desc    Send message with file attachment to channel
+// @access  Private
+router.post('/:channelId/messages/with-file', authenticate, memoryUpload.single('file'), async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const { content } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(channelId)) {
+      return res.status(400).json({ message: 'Invalid channel ID' });
+    }
+
+    if (!content && !req.file) {
+      return res.status(400).json({ message: 'Message content or file required' });
+    }
+
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ message: 'Channel not found' });
+    }
+
+    const server = await Server.findById(channel.server);
+    if (!server || !isServerMember(server, req.user._id)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const canSend = hasServerPermission(server, req.user._id, 'sendMessages');
+    if (req.file) {
+      const canAttach = hasServerPermission(server, req.user._id, 'attachFiles');
+      if (!canSend || !canAttach) {
+        return res.status(403).json({ message: 'Cannot send files in this channel' });
+      }
+    } else if (!canSend) {
+      return res.status(403).json({ message: 'Cannot send messages in this channel' });
+    }
+
+    // Check slow mode
+    if (channel.slowMode > 0) {
+      const lastMessage = await Message.findOne({
+        channel: channelId,
+        author: req.user._id
+      }).sort({ createdAt: -1 });
+
+      if (lastMessage) {
+        const timeDiff = Date.now() - lastMessage.createdAt.getTime();
+        if (timeDiff < channel.slowMode * 1000) {
+          const remainingTime = Math.ceil((channel.slowMode * 1000 - timeDiff) / 1000);
+          return res.status(429).json({ 
+            message: `Slow mode is enabled. Please wait ${remainingTime} seconds.` 
+          });
+        }
+      }
+    }
+
+    let attachments = [];
+
+    // Upload file if provided
+    if (req.file) {
+      try {
+        const uploadResult = await s3Service.uploadFile(req.file, req.user.id, 'channel-attachments');
+        const signedUrl = await s3Service.getSignedUrl(uploadResult.key, 86400);
+
+        attachments.push({
+          id: uploadResult.key,
+          filename: uploadResult.filename,
+          contentType: req.file.mimetype,
+          size: uploadResult.size,
+          url: signedUrl,
+          proxyUrl: uploadResult.url,
+          // Add dimensions for images
+          ...(req.file.mimetype.startsWith('image/') && {
+            height: null, // Can be enhanced with image processing
+            width: null
+          })
+        });
+      } catch (uploadError) {
+        console.error('File upload error:', uploadError);
+        return res.status(500).json({ message: 'Failed to upload file' });
+      }
+    }
+
+    const message = new Message({
+      content: content?.trim() || '',
+      author: req.user._id,
+      channel: channelId,
+      server: channel.server,
+      attachments,
+      type: req.file ? 'FILE_ATTACHMENT' : 'DEFAULT'
+    });
+
+    await message.save();
+
+    const populatedMessage = await Message.findById(message._id)
+      .populate('author', 'username discriminator displayName avatar');
+
+    // Emit to Socket.IO for real-time delivery
+    req.app.get('io').to(`channel:${channelId}`).emit('message', populatedMessage);
+
+    res.status(201).json(populatedMessage);
+
+  } catch (error) {
+    console.error('Error sending message with file:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      channelId: req.params.channelId,
+      userId: req.user._id,
+      hasFile: !!req.file
+    });
+    res.status(500).json({ 
+      message: 'Server error',
+      details: error.message 
+    });
   }
 });
 

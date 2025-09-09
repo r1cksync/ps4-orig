@@ -32,7 +32,8 @@ const messageSchema = new mongoose.Schema({
       'CHANNEL_PINNED_MESSAGE',
       'GUILD_MEMBER_JOIN',
       'USER_PREMIUM_GUILD_SUBSCRIPTION',
-      'SYSTEM'
+      'SYSTEM',
+      'FILE_ATTACHMENT'
     ],
     default: 'DEFAULT'
   },
