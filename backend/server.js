@@ -23,6 +23,7 @@ import messageRoutes from './routes/messages.js';
 import dmRoutes from './routes/dms.js';
 import friendRoutes from './routes/friends.js';
 import rolesRoutes from './routes/roles.js';
+import callsRoutes from './routes/calls.js';
 
 // Import middleware
 import { errorHandler } from './middleware/errorHandler.js';
@@ -112,8 +113,20 @@ class Server {
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+    // Make Socket.IO available to routes
+    this.app.use((req, res, next) => {
+      req.io = this.io;
+      next();
+    });
+
     // Request logging
     this.app.use(logger);
+
+    // Make io instance available to routes
+    this.app.use((req, res, next) => {
+      req.io = this.io;
+      next();
+    });
 
     // Health check endpoint
     this.app.get('/health', (req, res) => {
@@ -143,6 +156,7 @@ class Server {
     this.app.use('/api/messages', messageRoutes);
     this.app.use('/api/dms', dmRoutes);
     this.app.use('/api/friends', friendRoutes);
+    this.app.use('/api/calls', callsRoutes);
 
     // Root endpoint
     this.app.get('/', (req, res) => {

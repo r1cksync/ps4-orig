@@ -4,6 +4,7 @@ import Server from '../models/Server.js';
 import Channel from '../models/Channel.js';
 import DirectMessageChannel from '../models/DirectMessageChannel.js';
 import { setupDMHandlers } from '../socket/dmHandlers.js';
+import { handleVoiceEvents } from './voiceHandlers.js';
 
 // Store connected users and their socket IDs
 const connectedUsers = new Map();
@@ -39,6 +40,7 @@ export const authenticateSocket = async (socket, next) => {
 export const handleConnection = (io) => {
   return async (socket) => {
     const user = socket.user;
+    socket.userId = user._id; // Add userId to socket for voice handlers
     console.log(`User ${user.username}#${user.discriminator} connected with socket ${socket.id}`);
 
     // Store user connection
@@ -165,6 +167,9 @@ export const handleConnection = (io) => {
 
     // Set up comprehensive DM handlers for Discord-like functionality
     setupDMHandlers(io, socket);
+
+    // Set up voice/video call handlers
+    handleVoiceEvents(io, socket);
 
     // Handle voice settings updates
     socket.on('voiceSettingsUpdate', async (data) => {
