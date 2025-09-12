@@ -7,11 +7,15 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "build": "echo 'Building backend...' && npm install --production=false && echo 'Backend build complete!'",
+    "build:prod": "echo 'Production build...' && npm ci --only=production && echo 'Production build complete!'",
     "test": "node test-simple.js",
     "test:full": "node test-backend.js",
+    "test:voice": "node finalVoiceTest.js",
     "test:manual": "echo 'See TESTING.md for manual curl commands'",
     "lint": "eslint .",
-    "health": "curl http://localhost:3001/health || echo 'Server not running'"
+    "health": "curl http://localhost:3001/health || echo 'Server not running'",
+    "validate": "node --check server.js && echo 'Syntax validation passed!'"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.658.1",
