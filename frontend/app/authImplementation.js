@@ -1,5 +1,4 @@
 'use client';
-
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
@@ -35,7 +34,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await axios.get(`${BASE_URL}/auth/me`, {
         headers: { Authorization: `Bearer ${authToken}` },
-        timeout: 5000, // Add timeout
+        timeout: 5000,
       });
       
       if (response.data.success) {
@@ -47,7 +46,6 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Error fetching user:', error.response?.status, error.response?.data);
       
-      // Handle 401 specifically
       if (error.response?.status === 401) {
         console.log('Token invalid or expired, logging out...');
         localStorage.removeItem('token');
@@ -63,83 +61,78 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Register
-// Register
-const register = async (email, password, name) => {
-  console.log('Attempting registration with:', { email, name }); // Add this line for debugging
-  
-  try {
-    const response = await axios.post(`${BASE_URL}/auth/register`, {
-      email: email.toLowerCase().trim(),
-      password,
-      name: name?.trim() || email.split('@')[0],
-    }, {
-      timeout: 10000, // 10 second timeout
-      headers: {
-        'Content-Type': 'application/json',
+  const register = async (email, password, name) => {
+    console.log('Attempting registration with:', { email, name });
+    
+    try {
+      const response = await axios.post(`${BASE_URL}/auth/register`, {
+        email: email.toLowerCase().trim(),
+        password,
+        name: name?.trim() || email.split('@')[0],
+      }, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('Registration response:', response.data);
+      
+      if (response.data && response.data.success) {
+        setUser(response.data.data.user);
+        setToken(response.data.data.token);
+        localStorage.setItem('token', response.data.data.token);
+        router.push('/dashboard');
+        return { success: true };
+      } else {
+        console.error('Registration failed - invalid response structure:', response.data);
+        return { success: false, error: response.data?.error || 'Registration failed - invalid response' };
       }
-    });
-    
-    console.log('Registration response:', response.data); // Add this line for debugging
-    
-    if (response.data && response.data.success) {
-      setUser(response.data.data.user);
-      setToken(response.data.data.token);
-      localStorage.setItem('token', response.data.data.token);
-      router.push('/dashboard');
-      return { success: true };
-    } else {
-      console.error('Registration failed - invalid response structure:', response.data);
-      return { success: false, error: response.data?.error || 'Registration failed - invalid response' };
-    }
-  } catch (error) {
-    console.error('Registration error - full error object:', error); // Log full error
-    console.error('Registration error - status:', error.response?.status);
-    console.error('Registration error - status text:', error.response?.statusText);
-    console.error('Registration error - data:', error.response?.data);
-    console.error('Registration error - message:', error.message);
-    
-    // Handle different types of errors
-    if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
-      return { 
-        success: false, 
-        error: 'Backend server is not running. Please start your backend server on port 3001.' 
-      };
-    }
-    
-    if (error.response) {
-      // Server responded with error status
-      const errorData = error.response.data;
-      if (error.response.status === 400) {
+    } catch (error) {
+      console.error('Registration error - full error object:', error);
+      console.error('Registration error - status:', error.response?.status);
+      console.error('Registration error - status text:', error.response?.statusText);
+      console.error('Registration error - data:', error.response?.data);
+      console.error('Registration error - message:', error.message);
+      
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
         return { 
           success: false, 
-          error: errorData?.error || errorData?.message || 'Invalid registration data' 
+          error: 'Backend server is not running. Please start your backend server on port 3001.' 
         };
       }
-      if (error.response.status === 500) {
+      
+      if (error.response) {
+        const errorData = error.response.data;
+        if (error.response.status === 400) {
+          return { 
+            success: false, 
+            error: errorData?.error || errorData?.message || 'Invalid registration data' 
+          };
+        }
+        if (error.response.status === 500) {
+          return { 
+            success: false, 
+            error: 'Server error. Please try again later.' 
+          };
+        }
         return { 
           success: false, 
-          error: 'Server error. Please try again later.' 
+          error: errorData?.error || errorData?.message || `Registration failed (${error.response.status})` 
+        };
+      } else if (error.request) {
+        return { 
+          success: false, 
+          error: 'No response from server. Please check if backend is running on http://localhost:3001' 
+        };
+      } else {
+        return { 
+          success: false, 
+          error: error.message || 'Registration failed. Please try again.' 
         };
       }
-      return { 
-        success: false, 
-        error: errorData?.error || errorData?.message || `Registration failed (${error.response.status})` 
-      };
-    } else if (error.request) {
-      // Request was made but no response received
-      return { 
-        success: false, 
-        error: 'No response from server. Please check if backend is running on http://localhost:3001' 
-      };
-    } else {
-      // Something else happened
-      return { 
-        success: false, 
-        error: error.message || 'Registration failed. Please try again.' 
-      };
     }
-  }
-};
+  };
 
   // Login
   const login = async (email, password) => {
@@ -147,6 +140,8 @@ const register = async (email, password, name) => {
       const response = await axios.post(`${BASE_URL}/auth/login`, {
         email: email.toLowerCase(),
         password,
+      }, {
+        timeout: 5000,
       });
       
       if (response.data.success) {
@@ -170,7 +165,9 @@ const register = async (email, password, name) => {
   // Google Login
   const googleLogin = async (idToken) => {
     try {
-      const response = await axios.post(`${BASE_URL}/auth/google`, { idToken });
+      const response = await axios.post(`${BASE_URL}/auth/google`, { idToken }, {
+        timeout: 5000,
+      });
       
       if (response.data.success) {
         setUser(response.data.data.user);
@@ -328,11 +325,10 @@ const register = async (email, password, name) => {
         );
       } catch (error) {
         console.error('Logout error:', error.response?.status);
-        // Don't fail logout if the server call fails - just clear local state
+        // Continue with client-side logout even if server call fails
       }
     }
     
-    // Always clear local state
     setUser(null);
     setToken(null);
     localStorage.removeItem('token');
@@ -390,6 +386,7 @@ const register = async (email, password, name) => {
         refreshToken,
         logout,
         deactivateAccount,
+        setUser, // Added to allow components to update user state
       }}
     >
       {children}

@@ -54,7 +54,17 @@ const roleSchema = new mongoose.Schema({
       'MANAGE_NICKNAMES',
       'MANAGE_ROLES',
       'MANAGE_WEBHOOKS',
-      'MANAGE_EMOJIS'
+      'MANAGE_EMOJIS',
+      'USE_SLASH_COMMANDS',
+      'REQUEST_TO_SPEAK',
+      'MANAGE_EVENTS',
+      'MANAGE_THREADS',
+      'CREATE_PUBLIC_THREADS',
+      'CREATE_PRIVATE_THREADS',
+      'USE_EXTERNAL_STICKERS',
+      'SEND_MESSAGES_IN_THREADS',
+      'USE_EMBEDDED_ACTIVITIES',
+      'MODERATE_MEMBERS'
     ]
   }],
   settings: {

@@ -27,15 +27,14 @@ router.get('/', authenticate, async (req, res) => {
         break;
       case 'pending':
         query.status = 'PENDING';
-        query.requester = { $ne: req.user._id }; // Only incoming requests
-        break;
-      case 'sent':
-        query.status = 'PENDING';
-        query.requester = req.user._id; // Only outgoing requests
+        // Include both incoming and outgoing requests
         break;
       case 'blocked':
         query.status = 'BLOCKED';
         query.requester = req.user._id; // Only users I blocked
+        break;
+      case 'all':
+        // No additional status filter for 'all'
         break;
     }
 

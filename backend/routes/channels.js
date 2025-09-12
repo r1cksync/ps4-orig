@@ -7,6 +7,8 @@ import User from '../models/User.js';
 import { authenticate } from '../middleware/auth.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import s3Service, { memoryUpload } from '../services/s3Service.js';
+import { body, param, validationResult } from 'express-validator';
+import Call from '../models/Call.js';
 
 const router = express.Router();
 
@@ -38,55 +40,88 @@ const hasServerPermission = (server, userId, permission) => {
 // @access  Private
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { name, type, serverId, categoryId, topic, slowMode } = req.body;
+    const { name, type, serverId, settings } = req.body;
 
     // Validate required fields
     if (!name || !type || !serverId) {
-      return res.status(400).json({ message: 'Name, type, and server ID are required' });
+      return res.status(400).json({ message: 'Name, type, and serverId are required' });
+    }
+
+    // Validate channel type
+    const validTypes = ['TEXT', 'VOICE', 'CATEGORY', 'NEWS', 'STORE'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({ message: 'Invalid channel type' });
     }
 
     if (!mongoose.Types.ObjectId.isValid(serverId)) {
       return res.status(400).json({ message: 'Invalid server ID' });
     }
 
+    // Validate server exists and user permissions
     const server = await Server.findById(serverId).populate('members.user');
     if (!server) {
       return res.status(404).json({ message: 'Server not found' });
     }
 
-    // Check permissions (simplified - only server owner can create channels for now)
+    // Check if user is owner (only owners can create channels for now)
     const isOwner = server.owner.toString() === req.user._id.toString();
     if (!isOwner) {
       return res.status(403).json({ message: 'Only server owner can manage channels' });
     }
 
-    // Get position for new channel
-    const maxPosition = await Channel.findOne({ server: serverId })
-      .sort({ position: -1 })
-      .select('position');
-    
-    const position = maxPosition ? maxPosition.position + 1 : 0;
+    // Calculate position
+    const lastChannel = await Channel.findOne({ server: serverId, isDeleted: false }).sort({ position: -1 });
+    const position = lastChannel ? lastChannel.position + 1 : 0;
 
+    // Create channel with explicit settings mapping
     const channel = new Channel({
       name: name.trim().toLowerCase().replace(/\s+/g, '-'),
       type,
       server: serverId,
-      category: categoryId || null,
-      topic: topic?.trim(),
-      slowMode: slowMode || 0,
-      position
+      category: settings?.categoryId || null,
+      position,
+      settings: {
+        topic: settings?.topic?.trim() || '',
+        isNsfw: settings?.isNsfw ?? false,
+        slowMode: settings?.slowMode ?? 0,
+        bitrate: type === 'VOICE' ? (settings?.bitrate || 64) : undefined,
+        userLimit: type === 'VOICE' ? (settings?.userLimit || 0) : undefined
+      },
+      permissions: [],
+      connectedUsers: [],
+      isDeleted: false
     });
 
     await channel.save();
 
+    // Populate server and category for response
     const populatedChannel = await Channel.findById(channel._id)
-      .populate('category', 'name')
-      .populate('server', 'name');
+      .populate('server', 'name')
+      .populate('category', 'name');
 
-    // Emit real-time channel created event
+    // Emit Socket.IO event
     req.app.get('io').to(`server:${serverId}`).emit('channelCreated', {
       serverId,
-      channel: populatedChannel,
+      channel: {
+        _id: channel._id,
+        name: channel.name,
+        type: channel.type,
+        server: { _id: server._id, name: server.name },
+        settings: {
+          topic: channel.settings.topic,
+          isNsfw: channel.settings.isNsfw,
+          slowMode: channel.settings.slowMode,
+          bitrate: channel.settings.bitrate,
+          userLimit: channel.settings.userLimit
+        },
+        position: channel.position,
+        createdAt: channel.createdAt,
+        updatedAt: channel.updatedAt,
+        category: channel.category,
+        connectedUsers: channel.connectedUsers,
+        permissions: channel.permissions,
+        isDeleted: channel.isDeleted
+      },
       createdBy: req.user._id
     });
 
@@ -109,16 +144,16 @@ router.get('/:channelId', authenticate, async (req, res) => {
     }
 
     const channel = await Channel.findById(channelId)
-      .populate('category', 'name')
       .populate('server', 'name')
-      .populate('connectedUsers', 'username discriminator displayName avatar');
+      .populate('category', 'name')
+      .populate('connectedUsers.user', 'name avatar');
 
-    if (!channel) {
+    if (!channel || channel.isDeleted) {
       return res.status(404).json({ message: 'Channel not found' });
     }
 
     // Check if user has access to this channel
-    const server = await Server.findById(channel.server);
+    const server = await Server.findById(channel.server).populate('members.user');
     if (!server || !isServerMember(server, req.user._id)) {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -141,18 +176,18 @@ router.get('/:channelId', authenticate, async (req, res) => {
 router.put('/:channelId', authenticate, async (req, res) => {
   try {
     const { channelId } = req.params;
-    const { name, topic, slowMode, position } = req.body;
+    const { name, topic, nsfw, slowMode, position, bitrate, userLimit } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(channelId)) {
       return res.status(400).json({ message: 'Invalid channel ID' });
     }
 
     const channel = await Channel.findById(channelId);
-    if (!channel) {
+    if (!channel || channel.isDeleted) {
       return res.status(404).json({ message: 'Channel not found' });
     }
 
-    const server = await Server.findById(channel.server);
+    const server = await Server.findById(channel.server).populate('members.user');
     if (!server) {
       return res.status(404).json({ message: 'Server not found' });
     }
@@ -163,18 +198,56 @@ router.put('/:channelId', authenticate, async (req, res) => {
       return res.status(403).json({ message: 'Insufficient permissions' });
     }
 
+    // Validate fields
+    if (name && (name.length < 1 || name.length > 100)) {
+      return res.status(400).json({ message: 'Channel name must be between 1 and 100 characters' });
+    }
+    if (topic && topic.length > 1024) {
+      return res.status(400).json({ message: 'Topic must be 1024 characters or less' });
+    }
+    if (slowMode !== undefined && (slowMode < 0 || slowMode > 21600)) {
+      return res.status(400).json({ message: 'Slow mode must be between 0 and 21600 seconds' });
+    }
+    if (channel.type === 'VOICE') {
+      if (bitrate !== undefined && (bitrate < 8 || bitrate > 384)) {
+        return res.status(400).json({ message: 'Bitrate must be between 8 and 384 kbps' });
+      }
+      if (userLimit !== undefined && (userLimit < 0 || userLimit > 99)) {
+        return res.status(400).json({ message: 'User limit must be between 0 and 99' });
+      }
+    }
+
     // Update fields
+    const changes = {};
     if (name) {
       channel.name = name.trim().toLowerCase().replace(/\s+/g, '-');
+      changes.name = channel.name;
     }
     if (topic !== undefined) {
-      channel.topic = topic?.trim();
+      channel.settings.topic = topic?.trim() || '';
+      changes.topic = channel.settings.topic;
+    }
+    if (nsfw !== undefined) {
+      channel.settings.isNsfw = nsfw;
+      changes.nsfw = channel.settings.isNsfw;
     }
     if (slowMode !== undefined) {
-      channel.slowMode = slowMode;
+      channel.settings.slowMode = slowMode;
+      changes.slowMode = channel.settings.slowMode;
     }
     if (position !== undefined) {
       channel.position = position;
+      changes.position = channel.position;
+    }
+    if (channel.type === 'VOICE') {
+      if (bitrate !== undefined) {
+        channel.settings.bitrate = bitrate;
+        changes.bitrate = channel.settings.bitrate;
+      }
+      if (userLimit !== undefined) {
+        channel.settings.userLimit = userLimit;
+        changes.userLimit = channel.settings.userLimit;
+      }
     }
 
     await channel.save();
@@ -188,7 +261,7 @@ router.put('/:channelId', authenticate, async (req, res) => {
       serverId: updatedChannel.server._id,
       channel: updatedChannel,
       updatedBy: req.user._id,
-      changes: { name, topic, slowMode, position }
+      changes
     });
 
     res.json(updatedChannel);
@@ -210,11 +283,11 @@ router.delete('/:channelId', authenticate, async (req, res) => {
     }
 
     const channel = await Channel.findById(channelId);
-    if (!channel) {
+    if (!channel || channel.isDeleted) {
       return res.status(404).json({ message: 'Channel not found' });
     }
 
-    const server = await Server.findById(channel.server);
+    const server = await Server.findById(channel.server).populate('members.user');
     if (!server) {
       return res.status(404).json({ message: 'Server not found' });
     }
@@ -368,7 +441,9 @@ router.post('/:channelId/messages', authenticate, async (req, res) => {
       .populate('reference.messageId', 'content author');
 
     // Emit to Socket.IO for real-time delivery
-    req.app.get('io').to(`channel:${channelId}`).emit('message', populatedMessage);
+   const io = req.app.get('io');
+    console.log('Emitting message to channel:', `channel:${channelId}`, populatedMessage);
+    io.to(`channel:${channelId}`).emit('message', populatedMessage);
 
     res.status(201).json(populatedMessage);
   } catch (error) {
@@ -607,6 +682,43 @@ router.post('/:channelId/messages/with-file', authenticate, memoryUpload.single(
       message: 'Server error',
       details: error.message 
     });
+  }
+});
+
+// Get active call in a voice channel (visible to all server members)
+router.get('/voice-channel/:channelId/active', [
+  authenticate,
+  param('channelId').isMongoId().withMessage('Invalid channel ID')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { channelId } = req.params;
+
+    // Check if channel exists and user has access
+    const channel = await Channel.findById(channelId).populate('server');
+    if (!channel || channel.type !== 'VOICE') {
+      return res.status(404).json({ message: 'Voice channel not found' });
+    }
+
+    const server = channel.server;
+    if (!isServerMember(server, req.user.id)) {  // Reuse your utility function
+      return res.status(403).json({ message: 'Access denied to this channel' });
+    }
+
+    const call = await Call.getActiveCall(channelId, 'VOICE_CHANNEL');
+    if (!call) {
+      return res.status(404).json({ message: 'No active call in this channel' });
+    }
+
+    res.json({ call });
+
+  } catch (error) {
+    console.error('Error fetching active call:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 

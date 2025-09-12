@@ -536,9 +536,6 @@ router.post('/:channelId/recipients', authenticate, asyncHandler(async (req, res
   res.json({ success: true, data: updatedChannel });
 }));
 
-// @route   DELETE /api/dms/:channelId/recipients/:userId
-// @desc    Remove recipient from group DM or leave group DM
-// @access  Private
 router.delete('/:channelId/recipients/:userId', authenticate, asyncHandler(async (req, res) => {
   const { channelId, userId } = req.params;
 
@@ -570,7 +567,18 @@ router.delete('/:channelId/recipients/:userId', authenticate, asyncHandler(async
   }
 
   const isRemovingSelf = userId === req.user._id.toString();
-  const isOwner = canManageGroupDM(dmChannel, req.user._id);
+  // Check if the user is the owner using ObjectId.equals()
+  const isOwner = dmChannel.owner && mongoose.Types.ObjectId.isValid(dmChannel.owner) 
+    ? dmChannel.owner.equals(req.user._id)
+    : false;
+
+  console.log('DEBUG: Owner check', {
+    channelId,
+    userId: req.user._id.toString(),
+    ownerId: dmChannel.owner ? dmChannel.owner.toString() : 'null',
+    isOwner,
+    isRemovingSelf
+  });
 
   // Only owner can remove others, anyone can leave themselves
   if (!isRemovingSelf && !isOwner) {
@@ -723,7 +731,7 @@ router.patch('/:channelId', authenticate, asyncHandler(async (req, res) => {
   });
 }));
 // @route   DELETE /api/dms/:channelId
-// @desc    Close/Delete DM channel
+// @desc    Close/Delete DM channel (1:1 DMs or group DMs by owner)
 // @access  Private
 router.delete('/:channelId', authenticate, asyncHandler(async (req, res) => {
   const { channelId } = req.params;
@@ -732,7 +740,10 @@ router.delete('/:channelId', authenticate, asyncHandler(async (req, res) => {
     throw new ApiError('Invalid channel ID', 400);
   }
 
-  const dmChannel = await DirectMessageChannel.findById(channelId);
+  const dmChannel = await DirectMessageChannel.findById(channelId)
+    .populate('participants', 'username discriminator displayName avatar status lastSeen')
+    .populate('owner', 'username discriminator displayName avatar');
+
   if (!dmChannel || dmChannel.isDeleted) {
     throw new ApiError('DM channel not found', 404);
   }
@@ -746,14 +757,47 @@ router.delete('/:channelId', authenticate, asyncHandler(async (req, res) => {
     // For direct messages, mark as deleted for this user
     dmChannel.isDeleted = true;
     await dmChannel.save();
+  } else if (dmChannel.type === 'GROUP_DM' && dmChannel.owner.equals(req.user._id)) {
+    // For group DMs, allow owner to delete the entire channel
+    dmChannel.isDeleted = true;
+    await dmChannel.save();
+
+    // Create system message for group deletion
+    const systemMessage = new DirectMessage({
+      content: `${req.user.displayName} deleted the group`,
+      author: req.user._id,
+      channel: dmChannel._id,
+      type: 'SYSTEM'
+    });
+    await systemMessage.save();
+
+    // Update last message
+    dmChannel.lastMessage = systemMessage._id;
+    dmChannel.lastMessageAt = new Date();
+    await dmChannel.save();
+
+    // Emit real-time event to all participants
+    const io = req.app.get('io');
+    if (io) {
+      dmChannel.participants.forEach(participant => {
+        io.to(`user:${participant._id}`).emit('groupDMDeleted', {
+          channelId: dmChannel._id,
+          deletedBy: {
+            _id: req.user._id,
+            username: req.user.username,
+            displayName: req.user.displayName
+          }
+        });
+      });
+    }
   } else {
-    // For group DMs, remove user from participants (handled by recipients endpoint)
+    // For group DMs, non-owners must use recipients endpoint to leave
     throw new ApiError('Use recipients endpoint to leave group DMs', 400);
   }
 
   res.json({ 
     success: true, 
-    data: { message: 'DM channel closed successfully' }
+    data: { message: dmChannel.type === 'DM' ? 'DM channel closed successfully' : 'Group DM deleted successfully' }
   });
 }));
 
@@ -854,7 +898,6 @@ router.post('/:channelId/upload', authenticate, memoryUpload.single('file'), asy
       size: uploadResult.size,
       url: signedUrl,
       proxyUrl: uploadResult.url,
-      // Add dimensions for images
       ...(req.file.mimetype.startsWith('image/') && {
         height: null, // Can be enhanced with image processing
         width: null
@@ -880,13 +923,13 @@ router.post('/:channelId/upload', authenticate, memoryUpload.single('file'), asy
 // @access  Private
 router.post('/:channelId/messages/with-file', authenticate, memoryUpload.single('file'), asyncHandler(async (req, res) => {
   const { channelId } = req.params;
-  const { content, referencedMessageId, nonce } = req.body;
+  const { content, referencedMessageId, nonce, attachments } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(channelId)) {
     throw new ApiError('Invalid channel ID', 400);
   }
 
-  if (!content?.trim() && !req.file) {
+  if (!content?.trim() && !req.file && (!attachments || !Array.isArray(attachments) || attachments.length === 0)) {
     throw new ApiError('Message content or file required', 400);
   }
 
@@ -901,15 +944,15 @@ router.post('/:channelId/messages/with-file', authenticate, memoryUpload.single(
     throw new ApiError('DM channel not found or no access', 404);
   }
 
-  let attachments = [];
-  
-  // Upload file if provided
+  let messageAttachments = [];
+
+  // Handle file upload if provided
   if (req.file) {
     try {
       const uploadResult = await s3Service.uploadFile(req.file, req.user.id, 'dm-attachments');
       const signedUrl = await s3Service.getSignedUrl(uploadResult.key, 86400);
 
-      attachments.push({
+      messageAttachments.push({
         id: uploadResult.key,
         filename: uploadResult.filename,
         contentType: req.file.mimetype,
@@ -925,6 +968,20 @@ router.post('/:channelId/messages/with-file', authenticate, memoryUpload.single(
       console.error('File upload error:', error);
       throw new ApiError('Failed to upload file', 500);
     }
+  } else if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+    // Use pre-uploaded attachment metadata
+    messageAttachments = attachments.map(attachment => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      contentType: attachment.contentType,
+      size: attachment.size,
+      url: attachment.url,
+      proxyUrl: attachment.proxyUrl,
+      ...(attachment.contentType.startsWith('image/') && {
+        height: attachment.height || null,
+        width: attachment.width || null
+      })
+    }));
   }
 
   // Handle referenced message for replies
@@ -950,7 +1007,7 @@ router.post('/:channelId/messages/with-file', authenticate, memoryUpload.single(
     content: content?.trim() || '',
     author: req.user._id,
     channel: channelId,
-    attachments,
+    attachments: messageAttachments,
     referencedMessage: referencedMessageId || null,
     nonce
   });
@@ -1068,14 +1125,15 @@ router.post('/:channelId/messages', authenticate, asyncHandler(async (req, res) 
     .populate('referencedMessage.author', 'username discriminator displayName avatar');
 
   // Emit real-time event to all participants
-  const io = req.app.get('io');
+  const io = req.io; // Use req.io instead of req.app.get('io')
   if (io) {
-    dmChannel.participants.forEach(participant => {
-      io.to(`user:${participant._id}`).emit('dmMessage', {
-        channelId: dmChannel._id,
-        message: populatedMessage
-      });
+    console.log('Emitting dmMessage to dm channel room:', `dm:${dmChannel._id}`, 'Message:', populatedMessage);
+    io.to(`dm:${dmChannel._id}`).emit('dmMessage', {
+      channelId: dmChannel._id,
+      message: populatedMessage
     });
+  } else {
+    console.error('Socket.IO instance not available');
   }
 
   res.status(201).json({ success: true, data: populatedMessage });

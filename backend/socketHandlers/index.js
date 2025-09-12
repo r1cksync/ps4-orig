@@ -5,17 +5,16 @@ import Channel from '../models/Channel.js';
 import DirectMessageChannel from '../models/DirectMessageChannel.js';
 import { setupDMHandlers } from '../socket/dmHandlers.js';
 
-// Store connected users and their socket IDs
 const connectedUsers = new Map();
 const userSockets = new Map();
 
-// Authentication middleware for Socket.IO
 export const authenticateSocket = async (socket, next) => {
   try {
     const token = socket.handshake.auth.token || 
                  socket.handshake.headers.authorization?.replace('Bearer ', '') ||
                  socket.handshake.query.token;
     
+    console.log('Socket.IO: Authenticating with token', token?.substring(0, 10) + '...');
     if (!token) {
       return next(new Error('Authentication token required'));
     }
@@ -27,7 +26,13 @@ export const authenticateSocket = async (socket, next) => {
       return next(new Error('Invalid or inactive user'));
     }
 
-    socket.user = user;
+    socket.user = {
+      ...user.toObject(),
+      username: user.username || `User_${user._id.toString().slice(0, 8)}`,
+      discriminator: user.discriminator || '0000',
+      displayName: user.displayName || user.username || `User_${user._id.toString().slice(0, 8)}`,
+    };
+    console.log('Socket.IO: User authenticated:', socket.user._id);
     next();
   } catch (error) {
     console.error('Socket authentication error:', error.message);
@@ -35,13 +40,11 @@ export const authenticateSocket = async (socket, next) => {
   }
 };
 
-// Handle user connection
 export const handleConnection = (io) => {
   return async (socket) => {
     const user = socket.user;
     console.log(`User ${user.username}#${user.discriminator} connected with socket ${socket.id}`);
 
-    // Store user connection
     connectedUsers.set(user._id.toString(), {
       userId: user._id,
       socketId: socket.id,
@@ -51,42 +54,63 @@ export const handleConnection = (io) => {
       lastSeen: new Date()
     });
 
-    // Store socket reference
     userSockets.set(socket.id, user._id.toString());
 
-    // Update user status to online
-    await user.updateStatus('ONLINE');
+    await User.findByIdAndUpdate(user._id, { status: 'ONLINE' });
 
-    // Join user to their personal room
     socket.join(`user:${user._id}`);
+    console.log(`Socket.IO: Socket ${socket.id} joined user:${user._id}`);
 
-    // Join user to their server rooms
     try {
-      const userServers = await user.getServers();
+      const userServers = await Server.find({ members: user._id });
+      console.log(`Socket.IO: User ${user._id} servers:`, userServers.map(s => s._id.toString()));
+
       for (const server of userServers) {
         socket.join(`server:${server._id}`);
-        
-        // Join user to channels they have access to
         const channels = await Channel.find({ server: server._id });
         for (const channel of channels) {
-          const serverDoc = await Server.findById(server._id);
-          const canView = await serverDoc.hasPermission(user._id, 'viewChannels', channel._id);
-          if (canView) {
-            socket.join(`channel:${channel._id}`);
-          }
+          console.log(`Socket.IO: Joining user ${user._id} to channel ${channel._id}`);
+          socket.join(`channel:${channel._id}`);
         }
       }
 
-      // Join user to their DM channels
-      const dmChannels = await user.getDMChannels();
-      for (const dmChannel of dmChannels) {
-        socket.join(`dm:${dmChannel._id}`);
-      }
+      // Handle joinUser for DM real-time messaging
+      socket.on('joinUser', ({ userId }) => {
+        if (userId === user._id.toString()) {
+          console.log(`Socket.IO: Socket ${socket.id} joined user:${userId}`);
+          socket.join(`user:${userId}`);
+        } else {
+          console.error(`Socket.IO: Socket ${socket.id} attempted to join unauthorized user:${userId}`);
+          socket.emit('error', { message: 'Unauthorized user join attempt' });
+        }
+      });
 
-      // Emit user online status to friends and servers
+      // Allow joining any channel via joinChannel event
+      socket.on('joinChannel', async (data) => {
+        const { channelId } = data;
+        try {
+          const channel = await Channel.findById(channelId);
+          if (!channel) {
+            console.log(`Socket.IO: Channel ${channelId} not found for user ${user._id}`);
+            return socket.emit('error', { message: 'Channel not found' });
+          }
+          console.log(`Socket.IO: Joining user ${user._id} to channel ${channelId} (manual)`);
+          socket.join(`channel:${channelId}`);
+          socket.emit('channelJoined', { channelId });
+        } catch (error) {
+          console.error(`Socket.IO: Error joining channel ${channelId}:`, error.message);
+          socket.emit('error', { message: 'Failed to join channel' });
+        }
+      });
+
+      // Remove automatic DM channel joining to avoid confusion with user:<userId> rooms
+      // const dmChannels = await DirectMessageChannel.find({ participants: user._id });
+      // for (const dmChannel of dmChannels) {
+      //   socket.join(`dm:${dmChannel._id}`);
+      // }
+
       await broadcastStatusChange(io, user._id, 'ONLINE');
 
-      // Send initial data to client
       socket.emit('connected', {
         user: {
           _id: user._id,
@@ -97,14 +121,13 @@ export const handleConnection = (io) => {
           status: 'ONLINE'
         },
         servers: userServers,
-        dmChannels
+        // dmChannels
       });
 
     } catch (error) {
       console.error('Error setting up user rooms:', error);
     }
 
-    // Handle server join/leave events
     socket.on('joinServer', async (data) => {
       await handleJoinServer(socket, data);
     });
@@ -113,16 +136,11 @@ export const handleConnection = (io) => {
       await handleLeaveServer(socket, data);
     });
 
-    // Handle channel events
-    socket.on('joinChannel', async (data) => {
-      await handleJoinChannel(socket, data);
-    });
-
     socket.on('leaveChannel', async (data) => {
+      console.log('Socket.IO: Received leaveChannel event', data);
       await handleLeaveChannel(socket, data);
     });
 
-    // Handle voice channel events
     socket.on('joinVoiceChannel', async (data) => {
       await handleJoinVoiceChannel(io, socket, data);
     });
@@ -135,7 +153,6 @@ export const handleConnection = (io) => {
       await handleVoiceStateUpdate(io, socket, data);
     });
 
-    // Handle typing events
     socket.on('typing', (data) => {
       handleTyping(socket, data);
     });
@@ -144,17 +161,14 @@ export const handleConnection = (io) => {
       handleStopTyping(socket, data);
     });
 
-    // Handle status updates
     socket.on('statusUpdate', async (data) => {
       await handleStatusUpdate(io, socket, data);
     });
 
-    // Handle custom status updates
     socket.on('customStatusUpdate', async (data) => {
       await handleCustomStatusUpdate(io, socket, data);
     });
 
-    // Handle DM events
     socket.on('joinDM', async (data) => {
       await handleJoinDM(socket, data);
     });
@@ -163,46 +177,36 @@ export const handleConnection = (io) => {
       await handleLeaveDM(socket, data);
     });
 
-    // Set up comprehensive DM handlers for Discord-like functionality
     setupDMHandlers(io, socket);
 
-    // Handle voice settings updates
     socket.on('voiceSettingsUpdate', async (data) => {
       await handleVoiceSettingsUpdate(socket, data);
     });
 
-    // Handle presence updates
     socket.on('presenceUpdate', async (data) => {
       await handlePresenceUpdate(io, socket, data);
     });
 
-    // Handle disconnection
     socket.on('disconnect', async (reason) => {
       await handleDisconnection(io, socket, reason);
     });
   };
 };
 
-// Server event handlers
 const handleJoinServer = async (socket, data) => {
   try {
     const { serverId } = data;
     const user = socket.user;
 
     const server = await Server.findById(serverId);
-    if (!server || !server.isMember(user._id)) {
+    if (!server || !server.members.includes(user._id)) {
       return socket.emit('error', { message: 'Server not found or access denied' });
     }
 
     socket.join(`server:${serverId}`);
-
-    // Join channels user has access to
     const channels = await Channel.find({ server: serverId });
     for (const channel of channels) {
-      const canView = await server.hasPermission(user._id, 'viewChannels', channel._id);
-      if (canView) {
-        socket.join(`channel:${channel._id}`);
-      }
+      socket.join(`channel:${channel._id}`);
     }
 
     socket.emit('serverJoined', { serverId });
@@ -215,47 +219,14 @@ const handleJoinServer = async (socket, data) => {
 const handleLeaveServer = async (socket, data) => {
   try {
     const { serverId } = data;
-
     socket.leave(`server:${serverId}`);
-
-    // Leave all channels in this server
     const channels = await Channel.find({ server: serverId });
     for (const channel of channels) {
       socket.leave(`channel:${channel._id}`);
     }
-
     socket.emit('serverLeft', { serverId });
   } catch (error) {
     console.error('Error leaving server:', error);
-  }
-};
-
-// Channel event handlers
-const handleJoinChannel = async (socket, data) => {
-  try {
-    const { channelId } = data;
-    const user = socket.user;
-
-    const channel = await Channel.findById(channelId);
-    if (!channel) {
-      return socket.emit('error', { message: 'Channel not found' });
-    }
-
-    const server = await Server.findById(channel.server);
-    if (!server || !server.isMember(user._id)) {
-      return socket.emit('error', { message: 'Access denied' });
-    }
-
-    const canView = await server.hasPermission(user._id, 'viewChannels', channelId);
-    if (!canView) {
-      return socket.emit('error', { message: 'Cannot view this channel' });
-    }
-
-    socket.join(`channel:${channelId}`);
-    socket.emit('channelJoined', { channelId });
-  } catch (error) {
-    console.error('Error joining channel:', error);
-    socket.emit('error', { message: 'Failed to join channel' });
   }
 };
 
@@ -269,7 +240,6 @@ const handleLeaveChannel = async (socket, data) => {
   }
 };
 
-// Voice channel event handlers
 const handleJoinVoiceChannel = async (io, socket, data) => {
   try {
     const { channelId } = data;
@@ -287,8 +257,6 @@ const handleJoinVoiceChannel = async (io, socket, data) => {
     }
 
     await channel.addConnectedUser(user._id);
-
-    // Broadcast voice state update to server
     io.to(`server:${channel.server}`).emit('voiceStateUpdate', {
       channelId,
       userId: user._id,
@@ -316,8 +284,6 @@ const handleLeaveVoiceChannel = async (io, socket, data) => {
     const channel = await Channel.findById(channelId);
     if (channel) {
       await channel.removeConnectedUser(user._id);
-
-      // Broadcast voice state update to server
       io.to(`server:${channel.server}`).emit('voiceStateUpdate', {
         channelId,
         userId: user._id,
@@ -342,20 +308,16 @@ const handleVoiceStateUpdate = async (io, socket, data) => {
     const { channelId, isMuted, isDeafened, isSpeaking } = data;
     const user = socket.user;
 
-    // Update user's voice settings if provided
-    if (typeof isMuted === 'boolean' || typeof isDeafened === 'boolean') {
-      const voiceSettings = { ...user.voiceSettings };
-      if (typeof isMuted === 'boolean') voiceSettings.isMuted = isMuted;
-      if (typeof isDeafened === 'boolean') voiceSettings.isDeafened = isDeafened;
-      
-      await user.updateVoiceSettings(voiceSettings);
-    }
+    const voiceSettings = {};
+    if (typeof isMuted === 'boolean') voiceSettings.isMuted = isMuted;
+    if (typeof isDeafened === 'boolean') voiceSettings.isDeafened = isDeafened;
+    
+    await User.findByIdAndUpdate(user._id, { voiceSettings });
 
-    // Broadcast voice state to channel
     io.to(`channel:${channelId}`).emit('userVoiceStateUpdate', {
       userId: user._id,
-      isMuted: user.voiceSettings.isMuted,
-      isDeafened: user.voiceSettings.isDeafened,
+      isMuted: voiceSettings.isMuted,
+      isDeafened: voiceSettings.isDeafened,
       isSpeaking: isSpeaking || false
     });
   } catch (error) {
@@ -363,7 +325,6 @@ const handleVoiceStateUpdate = async (io, socket, data) => {
   }
 };
 
-// Typing event handlers
 const handleTyping = (socket, data) => {
   const { channelId, isDM = false } = data;
   const user = socket.user;
@@ -392,13 +353,12 @@ const handleStopTyping = (socket, data) => {
   });
 };
 
-// Status event handlers
 const handleStatusUpdate = async (io, socket, data) => {
   try {
     const { status } = data;
     const user = socket.user;
 
-    await user.updateStatus(status);
+    await User.findByIdAndUpdate(user._id, { status });
     connectedUsers.set(user._id.toString(), {
       ...connectedUsers.get(user._id.toString()),
       status,
@@ -418,9 +378,7 @@ const handleCustomStatusUpdate = async (io, socket, data) => {
     const { customStatus } = data;
     const user = socket.user;
 
-    user.customStatus = customStatus;
-    await user.save();
-
+    await User.findByIdAndUpdate(user._id, { customStatus });
     await broadcastStatusChange(io, user._id, user.status, customStatus);
     socket.emit('customStatusUpdated', { customStatus });
   } catch (error) {
@@ -429,7 +387,6 @@ const handleCustomStatusUpdate = async (io, socket, data) => {
   }
 };
 
-// DM event handlers
 const handleJoinDM = async (socket, data) => {
   try {
     const { channelId } = data;
@@ -458,55 +415,45 @@ const handleLeaveDM = async (socket, data) => {
   }
 };
 
-// Voice settings handler
 const handleVoiceSettingsUpdate = async (socket, data) => {
   try {
     const user = socket.user;
-    await user.updateVoiceSettings(data);
-    socket.emit('voiceSettingsUpdated', { settings: user.voiceSettings });
+    await User.findByIdAndUpdate(user._id, { voiceSettings: data });
+    socket.emit('voiceSettingsUpdated', { settings: data });
   } catch (error) {
     console.error('Error updating voice settings:', error);
     socket.emit('error', { message: 'Failed to update voice settings' });
   }
 };
 
-// Presence handler
 const handlePresenceUpdate = async (io, socket, data) => {
   try {
     const { activity } = data;
     const user = socket.user;
 
-    // Update user's last seen
-    user.lastSeen = new Date();
-    await user.save();
-
+    await User.findByIdAndUpdate(user._id, { lastSeen: new Date() });
     connectedUsers.set(user._id.toString(), {
       ...connectedUsers.get(user._id.toString()),
       lastSeen: new Date(),
       activity
     });
 
-    // Broadcast presence update to friends and servers
     await broadcastPresenceUpdate(io, user._id, activity);
   } catch (error) {
     console.error('Error updating presence:', error);
   }
 };
 
-// Disconnection handler
 const handleDisconnection = async (io, socket, reason) => {
   try {
     const user = socket.user;
     console.log(`User ${user.username}#${user.discriminator} disconnected: ${reason}`);
 
-    // Remove from connected users
     connectedUsers.delete(user._id.toString());
     userSockets.delete(socket.id);
 
-    // Update user status to offline
-    await user.updateStatus('OFFLINE');
+    await User.findByIdAndUpdate(user._id, { status: 'OFFLINE' });
 
-    // Remove from all voice channels
     const voiceChannels = await Channel.find({
       type: 'VOICE',
       connectedUsers: user._id
@@ -514,8 +461,6 @@ const handleDisconnection = async (io, socket, reason) => {
 
     for (const channel of voiceChannels) {
       await channel.removeConnectedUser(user._id);
-      
-      // Broadcast voice state update
       io.to(`server:${channel.server}`).emit('voiceStateUpdate', {
         channelId: channel._id,
         userId: user._id,
@@ -529,21 +474,17 @@ const handleDisconnection = async (io, socket, reason) => {
       });
     }
 
-    // Broadcast offline status
     await broadcastStatusChange(io, user._id, 'OFFLINE');
   } catch (error) {
     console.error('Error handling disconnection:', error);
   }
 };
 
-// Utility functions
 const broadcastStatusChange = async (io, userId, status, customStatus = null) => {
   try {
-    // Get user's friends
     const user = await User.findById(userId);
     const friends = await user.getFriends();
 
-    // Broadcast to friends
     friends.forEach(friend => {
       io.to(`user:${friend._id}`).emit('friendStatusUpdate', {
         userId,
@@ -553,8 +494,7 @@ const broadcastStatusChange = async (io, userId, status, customStatus = null) =>
       });
     });
 
-    // Get user's servers and broadcast to members
-    const servers = await user.getServers();
+    const servers = await Server.find({ members: userId });
     servers.forEach(server => {
       io.to(`server:${server._id}`).emit('memberStatusUpdate', {
         userId,
@@ -573,7 +513,6 @@ const broadcastPresenceUpdate = async (io, userId, activity) => {
     const user = await User.findById(userId);
     const friends = await user.getFriends();
 
-    // Broadcast to friends
     friends.forEach(friend => {
       io.to(`user:${friend._id}`).emit('friendPresenceUpdate', {
         userId,
@@ -582,8 +521,7 @@ const broadcastPresenceUpdate = async (io, userId, activity) => {
       });
     });
 
-    // Broadcast to servers
-    const servers = await user.getServers();
+    const servers = await Server.find({ members: userId });
     servers.forEach(server => {
       io.to(`server:${server._id}`).emit('memberPresenceUpdate', {
         userId,
@@ -596,7 +534,6 @@ const broadcastPresenceUpdate = async (io, userId, activity) => {
   }
 };
 
-// Export utility functions for use in routes
 export const getConnectedUsers = () => connectedUsers;
 export const getUserSocket = (userId) => {
   const userData = connectedUsers.get(userId);

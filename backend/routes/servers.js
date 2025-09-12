@@ -368,20 +368,13 @@ router.get('/:serverId/channels', authenticate, async (req, res) => {
       return res.status(403).json({ message: 'Not a member of this server' });
     }
 
-    const channels = await Channel.find({ server: serverId })
+    // **CHANGED**: Fetch all non-deleted channels without per-channel permission checks
+    const channels = await Channel.find({ server: serverId, isDeleted: false })
       .sort({ position: 1 })
       .populate('category', 'name');
 
-    // Filter channels based on permissions
-    const visibleChannels = [];
-    for (const channel of channels) {
-      const canView = await server.hasPermission(req.user._id, 'viewChannels', channel._id);
-      if (canView) {
-        visibleChannels.push(channel);
-      }
-    }
-
-    res.json(visibleChannels);
+    console.log('Returning channels:', channels); // **NEW**: Debug log to verify channels sent
+    res.json(channels);
   } catch (error) {
     console.error('Error fetching channels:', error);
     res.status(500).json({ message: 'Server error' });

@@ -48,7 +48,6 @@ const userSchema = new mongoose.Schema({
   },
   username: {
     type: String,
-    required: true,
     unique: true,
     trim: true,
     minlength: 2,
@@ -57,7 +56,6 @@ const userSchema = new mongoose.Schema({
   },
   discriminator: {
     type: String,
-    required: true,
     length: 4,
     match: /^\d{4}$/
   },
